@@ -1,9 +1,22 @@
 /**
  * Aplicação Frontend da Plataforma de Crachás Light & Grupo DDM
+ * Com Autenticação de Segurança (Login: admin / 35349020)
  */
 document.addEventListener('DOMContentLoaded', () => {
   const canvas = document.getElementById('badgeCanvas');
   const badgeEngine = new BadgeEngine(canvas);
+
+  // Elementos de Autenticação
+  const loginOverlay = document.getElementById('loginOverlay');
+  const loginForm = document.getElementById('loginForm');
+  const loginUsername = document.getElementById('loginUsername');
+  const loginPassword = document.getElementById('loginPassword');
+  const btnTogglePassword = document.getElementById('btnTogglePassword');
+  const loginErrorMessage = document.getElementById('loginErrorMessage');
+  const btnLoginSubmit = document.getElementById('btnLoginSubmit');
+  const authStatusIndicator = document.getElementById('authStatusIndicator');
+  const authStatusText = document.getElementById('authStatusText');
+  const btnLogout = document.getElementById('btnLogout');
 
   // Elementos do formulário
   const inputPrimeiroNome = document.getElementById('inputPrimeiroNome');
@@ -40,8 +53,146 @@ document.addEventListener('DOMContentLoaded', () => {
   let currentEditingId = null;
   let currentPhotoRotation = 0;
   let currentPhotoSrc = null;
+  let authToken = localStorage.getItem('badge_auth_token') || null;
 
-  // 1. Ouvintes de entrada de texto (atualização em tempo real)
+  // ================= SISTEMA DE AUTENTICAÇÃO ================= //
+
+  // Helper para fetch autenticado
+  async function authFetch(url, options = {}) {
+    options.headers = options.headers || {};
+    if (authToken) {
+      options.headers['Authorization'] = `Bearer ${authToken}`;
+    }
+
+    const res = await fetch(url, options);
+
+    if (res.status === 401) {
+      showLoginModal('Sessão expirada. Faça login novamente.');
+      throw new Error('Não autorizado');
+    }
+
+    return res;
+  }
+
+  function showLoginModal(error = null) {
+    loginOverlay.classList.add('active');
+    btnLogout.style.display = 'none';
+    authStatusText.textContent = 'Acesso Bloqueado';
+    authStatusIndicator.style.background = 'rgba(239, 68, 68, 0.15)';
+    authStatusIndicator.style.borderColor = 'rgba(239, 68, 68, 0.3)';
+
+    if (error) {
+      loginErrorMessage.textContent = error;
+      loginErrorMessage.style.display = 'block';
+    } else {
+      loginErrorMessage.style.display = 'none';
+    }
+
+    loginPassword.value = '';
+    setTimeout(() => {
+      if (!loginUsername.value) loginUsername.focus();
+      else loginPassword.focus();
+    }, 100);
+  }
+
+  function hideLoginModal(user = 'admin') {
+    loginOverlay.classList.remove('active');
+    btnLogout.style.display = 'inline-flex';
+    authStatusText.textContent = `Conectado (${user})`;
+    authStatusIndicator.style.background = 'rgba(16, 185, 129, 0.1)';
+    authStatusIndicator.style.borderColor = 'rgba(16, 185, 129, 0.3)';
+  }
+
+  // Alternar visualização da senha
+  btnTogglePassword.addEventListener('click', () => {
+    if (loginPassword.type === 'password') {
+      loginPassword.type = 'text';
+      btnTogglePassword.textContent = '🙈';
+    } else {
+      loginPassword.type = 'password';
+      btnTogglePassword.textContent = '👁️';
+    }
+  });
+
+  // Submissão do Formulário de Login
+  loginForm.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    loginErrorMessage.style.display = 'none';
+    btnLoginSubmit.disabled = true;
+    btnLoginSubmit.innerHTML = '<span>Verificando...</span>';
+
+    const username = loginUsername.value.trim();
+    const password = loginPassword.value;
+
+    try {
+      const res = await fetch('/api/auth/login', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ username, password })
+      });
+
+      const json = await res.json();
+
+      if (json.success && json.token) {
+        authToken = json.token;
+        localStorage.setItem('badge_auth_token', authToken);
+        hideLoginModal(json.user);
+        showToast(`Bem-vindo, ${json.user}!`, 'success');
+        carregarColaboradores();
+      } else {
+        loginErrorMessage.textContent = json.error || 'Credenciais inválidas!';
+        loginErrorMessage.style.display = 'block';
+        loginPassword.select();
+      }
+    } catch (err) {
+      loginErrorMessage.textContent = 'Erro ao conectar ao servidor.';
+      loginErrorMessage.style.display = 'block';
+    } finally {
+      btnLoginSubmit.disabled = false;
+      btnLoginSubmit.innerHTML = '<span>Acessar Plataforma</span> <span>➜</span>';
+    }
+  });
+
+  // Logout
+  btnLogout.addEventListener('click', async () => {
+    try {
+      await authFetch('/api/auth/logout', { method: 'POST' });
+    } catch (e) { /* ignore */ }
+
+    authToken = null;
+    localStorage.removeItem('badge_auth_token');
+    showLoginModal();
+    showToast('Você saiu da plataforma.', 'info');
+  });
+
+  // Verificar sessão ao iniciar
+  async function checkAuthOnStartup() {
+    if (!authToken) {
+      showLoginModal();
+      return;
+    }
+
+    try {
+      const res = await fetch('/api/auth/check', {
+        headers: { 'Authorization': `Bearer ${authToken}` }
+      });
+      const json = await res.json();
+
+      if (json.authenticated) {
+        hideLoginModal(json.user);
+        carregarColaboradores();
+      } else {
+        authToken = null;
+        localStorage.removeItem('badge_auth_token');
+        showLoginModal();
+      }
+    } catch (err) {
+      showLoginModal();
+    }
+  }
+
+  // ================= FORMULÁRIO E RENDERIZAÇÃO ================= //
+
   function updateDataFromInputs() {
     badgeEngine.setData({
       primeiroNome: inputPrimeiroNome.value,
@@ -68,7 +219,7 @@ document.addEventListener('DOMContentLoaded', () => {
   inputMatricula.addEventListener('input', updateDataFromInputs);
   inputCargo.addEventListener('input', updateDataFromInputs);
 
-  // 2. Manipulação de Arquivos e Fotos (Drag & Drop + Input File)
+  // Upload e Arrastar Foto
   dropzone.addEventListener('click', () => photoFileInput.click());
 
   dropzone.addEventListener('dragover', (e) => {
@@ -94,7 +245,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
   function handlePhotoFile(file) {
     if (!file.type.startsWith('image/')) {
-      showToast('Por favor envie um arquivo de imagem válido (JPG ou PNG).', 'error');
+      showToast('Envie um arquivo de imagem válido (JPG ou PNG).', 'error');
       return;
     }
 
@@ -158,7 +309,8 @@ document.addEventListener('DOMContentLoaded', () => {
 
   btnResetPhoto.addEventListener('click', resetPhotoControls);
 
-  // 3. Salvar no Banco de Dados
+  // ================= AÇÕES DO BANCO DE DADOS ================= //
+
   btnSalvar.addEventListener('click', async () => {
     const primeiroNome = inputPrimeiroNome.value.trim();
     const nomeCompleto = inputNomeCompleto.value.trim();
@@ -190,7 +342,7 @@ document.addEventListener('DOMContentLoaded', () => {
         method = 'PUT';
       }
 
-      const res = await fetch(url, {
+      const res = await authFetch(url, {
         method,
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload)
@@ -205,15 +357,16 @@ document.addEventListener('DOMContentLoaded', () => {
         showToast(json.error || 'Erro ao salvar colaborador', 'error');
       }
     } catch (err) {
-      console.error(err);
-      showToast('Erro de comunicação com o servidor.', 'error');
+      if (err.message !== 'Não autorizado') {
+        showToast('Erro de comunicação com o servidor.', 'error');
+      }
     } finally {
       btnSalvar.disabled = false;
       btnSalvar.innerHTML = '<i>💾</i> Salvar no Banco';
     }
   });
 
-  // 4. Download da Imagem em Alta Resolução (PNG 300 DPI)
+  // Download da Imagem em Alta Resolução (PNG 300 DPI)
   btnDownloadPng.addEventListener('click', () => {
     const nome = (inputPrimeiroNome.value || 'cracha').trim().toLowerCase().replace(/\s+/g, '_');
     const matricula = (inputMatricula.value || '').trim();
@@ -226,10 +379,10 @@ document.addEventListener('DOMContentLoaded', () => {
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
-    showToast('Crachá em alta resolução baixado com sucesso!', 'success');
+    showToast('Crachá em alta resolução baixado!', 'success');
   });
 
-  // 5. Download em PDF (tamanho exato 55mm x 85mm)
+  // Download em PDF (55mm x 85mm oficial)
   btnDownloadPdf.addEventListener('click', () => {
     const dataUrl = badgeEngine.toDataURL('image/png', 1.0);
     const nome = (inputPrimeiroNome.value || 'cracha').trim().toLowerCase().replace(/\s+/g, '_');
@@ -238,7 +391,6 @@ document.addEventListener('DOMContentLoaded', () => {
 
     if (window.jspdf && window.jspdf.jsPDF) {
       const { jsPDF } = window.jspdf;
-      // Dimensão padrão oficial de crachá: 55 mm largura x 85 mm altura
       const doc = new jsPDF({
         orientation: 'portrait',
         unit: 'mm',
@@ -249,17 +401,14 @@ document.addEventListener('DOMContentLoaded', () => {
       doc.save(fileName);
       showToast('PDF do crachá gerado com sucesso!', 'success');
     } else {
-      // Fallback para impressão/salvamento do navegador
       window.print();
     }
   });
 
-  // 6. Impressão Direta
   btnImprimir.addEventListener('click', () => {
     window.print();
   });
 
-  // 7. Limpar / Novo Crachá
   btnNovo.addEventListener('click', () => {
     currentEditingId = null;
     currentPhotoSrc = null;
@@ -283,23 +432,25 @@ document.addEventListener('DOMContentLoaded', () => {
     showToast('Pronto para cadastrar um novo colaborador.', 'info');
   });
 
-  // 8. Carregar lista de colaboradores do banco
+  // Carregar lista de colaboradores
   async function carregarColaboradores(busca = '') {
+    if (!authToken) return;
+
     try {
       const url = busca ? `/api/colaboradores?busca=${encodeURIComponent(busca)}` : '/api/colaboradores';
-      const res = await fetch(url);
+      const res = await authFetch(url);
       const json = await res.json();
 
       if (json.success) {
         renderTabelaColaboradores(json.data);
       }
     } catch (err) {
-      console.error('Falha ao carregar lista de colaboradores:', err);
+      console.error('Falha ao listar colaboradores:', err);
     }
   }
 
   function renderTabelaColaboradores(lista) {
-    totalColabCount.textContent = lista.length;
+    totalColabCount.textContent = lista ? lista.length : 0;
 
     if (!lista || lista.length === 0) {
       colabTableBody.innerHTML = `
@@ -345,7 +496,6 @@ document.addEventListener('DOMContentLoaded', () => {
       </tr>
     `).join('');
 
-    // Adicionar eventos aos botões da tabela
     colabTableBody.querySelectorAll('.btn-load').forEach((btn) => {
       btn.addEventListener('click', () => carregarColaboradorNoForm(btn.dataset.id));
     });
@@ -355,10 +505,9 @@ document.addEventListener('DOMContentLoaded', () => {
     });
   }
 
-  // Carregar dados de um colaborador existente para edição/geração
   async function carregarColaboradorNoForm(id) {
     try {
-      const res = await fetch(`/api/colaboradores/${id}`);
+      const res = await authFetch(`/api/colaboradores/${id}`);
       const json = await res.json();
       if (!json.success || !json.data) return;
 
@@ -387,12 +536,11 @@ document.addEventListener('DOMContentLoaded', () => {
     }
   }
 
-  // Excluir colaborador
   async function excluirColaborador(id) {
     if (!confirm('Deseja realmente excluir este colaborador do banco de dados?')) return;
 
     try {
-      const res = await fetch(`/api/colaboradores/${id}`, { method: 'DELETE' });
+      const res = await authFetch(`/api/colaboradores/${id}`, { method: 'DELETE' });
       const json = await res.json();
       if (json.success) {
         showToast('Colaborador removido com sucesso.', 'info');
@@ -406,7 +554,6 @@ document.addEventListener('DOMContentLoaded', () => {
     }
   }
 
-  // Busca instantânea
   let searchTimeout;
   searchInput.addEventListener('input', () => {
     clearTimeout(searchTimeout);
@@ -415,7 +562,6 @@ document.addEventListener('DOMContentLoaded', () => {
     }, 250);
   });
 
-  // Função Toast
   function showToast(message, type = 'info') {
     let container = document.querySelector('.toast-container');
     if (!container) {
@@ -449,8 +595,8 @@ document.addEventListener('DOMContentLoaded', () => {
     }[m]));
   }
 
-  // Iniciar carregando a lista do banco e a foto de exemplo
-  carregarColaboradores();
+  // Inicialização
   updateDataFromInputs();
   loadPhotoFromSrc('/uploads/exemplo-mauricio.jpg');
+  checkAuthOnStartup();
 });

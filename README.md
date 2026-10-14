@@ -52,6 +52,10 @@ Abra:
 http://localhost:3000
 ```
 
+### 🔐 Credenciais de Acesso (Segurança)
+- **Usuário:** `admin`
+- **Senha:** `35349020`
+
 ---
 
 ## 📂 Estrutura do Projeto

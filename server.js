@@ -1,11 +1,30 @@
 const express = require('express');
 const path = require('node:path');
 const fs = require('node:fs');
+const crypto = require('node:crypto');
 const multer = require('multer');
 const { Colaborador } = require('./database');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
+
+// Credenciais de Acesso
+const ADMIN_USER = process.env.ADMIN_USER || 'admin';
+const ADMIN_PASS = process.env.ADMIN_PASS || '35349020';
+
+// Gerenciamento de Sessões em Memória
+const activeSessions = new Map(); // token -> { user, createdAt }
+
+// Limpeza de sessões antigas (expira em 24h)
+setInterval(() => {
+  const now = Date.now();
+  const maxAge = 24 * 60 * 60 * 1000;
+  for (const [token, data] of activeSessions.entries()) {
+    if (now - data.createdAt > maxAge) {
+      activeSessions.delete(token);
+    }
+  }
+}, 60 * 60 * 1000);
 
 // Garante pastas necessárias
 const uploadsDir = path.join(__dirname, 'uploads');
@@ -35,7 +54,7 @@ const upload = multer({
   }
 });
 
-// Middlewares
+// Middlewares Globais
 app.use(express.json({ limit: '25mb' }));
 app.use(express.urlencoded({ extended: true, limit: '25mb' }));
 
@@ -43,10 +62,80 @@ app.use(express.urlencoded({ extended: true, limit: '25mb' }));
 app.use(express.static(path.join(__dirname, 'public')));
 app.use('/uploads', express.static(uploadsDir));
 
-// ================= ROTAS DA API ================= //
+// Middleware de Autenticação para APIs protegidas
+function authMiddleware(req, res, next) {
+  const authHeader = req.headers.authorization;
+  if (!authHeader || !authHeader.startsWith('Bearer ')) {
+    return res.status(401).json({ success: false, error: 'Acesso não autorizado. Faça login primeiro.' });
+  }
+
+  const token = authHeader.split(' ')[1];
+  const session = activeSessions.get(token);
+
+  if (!session) {
+    return res.status(401).json({ success: false, error: 'Sessão expirada ou inválida. Faça login novamente.' });
+  }
+
+  req.user = session.user;
+  next();
+}
+
+// ================= ROTAS DE AUTENTICAÇÃO ================= //
+
+// 1. Rota de Login
+app.post('/api/auth/login', (req, res) => {
+  const { username, password } = req.body || {};
+
+  if (!username || !password) {
+    return res.status(400).json({ success: false, error: 'Informe usuário e senha.' });
+  }
+
+  if (username.trim() === ADMIN_USER && password === ADMIN_PASS) {
+    const token = crypto.randomBytes(32).toString('hex');
+    activeSessions.set(token, { user: ADMIN_USER, createdAt: Date.now() });
+
+    return res.json({
+      success: true,
+      message: 'Login realizado com sucesso!',
+      token,
+      user: ADMIN_USER
+    });
+  }
+
+  return res.status(401).json({ success: false, error: 'Usuário ou senha incorretos!' });
+});
+
+// 2. Checar validade do token
+app.get('/api/auth/check', (req, res) => {
+  const authHeader = req.headers.authorization;
+  if (!authHeader || !authHeader.startsWith('Bearer ')) {
+    return res.status(401).json({ authenticated: false });
+  }
+
+  const token = authHeader.split(' ')[1];
+  const session = activeSessions.get(token);
+
+  if (!session) {
+    return res.status(401).json({ authenticated: false });
+  }
+
+  return res.json({ authenticated: true, user: session.user });
+});
+
+// 3. Logout
+app.post('/api/auth/logout', (req, res) => {
+  const authHeader = req.headers.authorization;
+  if (authHeader && authHeader.startsWith('Bearer ')) {
+    const token = authHeader.split(' ')[1];
+    activeSessions.delete(token);
+  }
+  return res.json({ success: true, message: 'Logout realizado com sucesso.' });
+});
+
+// ================= ROTAS DA API PROTEGIDAS ================= //
 
 // 1. Listar colaboradores
-app.get('/api/colaboradores', (req, res) => {
+app.get('/api/colaboradores', authMiddleware, (req, res) => {
   try {
     const { busca } = req.query;
     const lista = Colaborador.listar(busca);
@@ -58,7 +147,7 @@ app.get('/api/colaboradores', (req, res) => {
 });
 
 // 2. Buscar colaborador por ID
-app.get('/api/colaboradores/:id', (req, res) => {
+app.get('/api/colaboradores/:id', authMiddleware, (req, res) => {
   try {
     const colab = Colaborador.buscarPorId(req.params.id);
     if (!colab) return res.status(404).json({ success: false, error: 'Colaborador não encontrado' });
@@ -68,8 +157,8 @@ app.get('/api/colaboradores/:id', (req, res) => {
   }
 });
 
-// 3. Cadastrar colaborador (com foto enviada via multipart ou JSON com base64)
-app.post('/api/colaboradores', upload.single('foto'), (req, res) => {
+// 3. Cadastrar colaborador (com foto)
+app.post('/api/colaboradores', authMiddleware, upload.single('foto'), (req, res) => {
   try {
     const { primeiro_nome, nome_completo, matricula, cargo, foto_base64 } = req.body;
 
@@ -82,7 +171,6 @@ app.post('/api/colaboradores', upload.single('foto'), (req, res) => {
     if (req.file) {
       foto_path = `/uploads/${req.file.filename}`;
     } else if (foto_base64 && foto_base64.startsWith('data:image')) {
-      // Salvar base64 em arquivo
       const matches = foto_base64.match(/^data:([A-Za-z-+/]+);base64,(.+)$/);
       if (matches && matches.length === 3) {
         const ext = matches[1].split('/')[1] || 'png';
@@ -109,7 +197,7 @@ app.post('/api/colaboradores', upload.single('foto'), (req, res) => {
 });
 
 // 4. Atualizar colaborador
-app.put('/api/colaboradores/:id', upload.single('foto'), (req, res) => {
+app.put('/api/colaboradores/:id', authMiddleware, upload.single('foto'), (req, res) => {
   try {
     const { id } = req.params;
     const { primeiro_nome, nome_completo, matricula, cargo, foto_base64 } = req.body;
@@ -117,7 +205,7 @@ app.put('/api/colaboradores/:id', upload.single('foto'), (req, res) => {
     const existente = Colaborador.buscarPorId(id);
     if (!existente) return res.status(404).json({ success: false, error: 'Colaborador não encontrado' });
 
-    let foto_path = null; // null = mantém o que já tem
+    let foto_path = null;
 
     if (req.file) {
       foto_path = `/uploads/${req.file.filename}`;
@@ -147,7 +235,7 @@ app.put('/api/colaboradores/:id', upload.single('foto'), (req, res) => {
 });
 
 // 5. Excluir colaborador
-app.delete('/api/colaboradores/:id', (req, res) => {
+app.delete('/api/colaboradores/:id', authMiddleware, (req, res) => {
   try {
     const ok = Colaborador.remover(req.params.id);
     if (!ok) return res.status(404).json({ success: false, error: 'Colaborador não encontrado' });
@@ -160,7 +248,8 @@ app.delete('/api/colaboradores/:id', (req, res) => {
 // Inicia servidor
 app.listen(PORT, () => {
   console.log(`\n======================================================`);
-  console.log(`⚡ PLATAFORMA DE CRACHÁS LIGHT & GRUPO DDM ATIVA!`);
+  console.log(`🔒 PLATAFORMA DE CRACHÁS LIGHT & GRUPO DDM ATIVA!`);
+  console.log(`👤 Usuário de Acesso: ${ADMIN_USER}`);
   console.log(`🌐 Acesse no seu navegador: http://localhost:${PORT}`);
   console.log(`======================================================\n`);
 });
