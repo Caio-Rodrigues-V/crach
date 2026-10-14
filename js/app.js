@@ -324,18 +324,6 @@ document.addEventListener('DOMContentLoaded', () => {
   inputMatricula.addEventListener('input', updateDataFromInputs);
   inputCargo.addEventListener('input', updateDataFromInputs);
 
-  // Alternador de fundo da logo (amarelo vs caixa branca)
-  const partnerLogoPreviewBox = document.getElementById('partnerLogoPreviewBox');
-  document.querySelectorAll('input[name="logoBgOption"]').forEach((radio) => {
-    radio.addEventListener('change', (e) => {
-      const mode = e.target.value;
-      badgeEngine.setLogoBackground(mode);
-      if (partnerLogoPreviewBox) {
-        partnerLogoPreviewBox.style.backgroundColor = mode === 'yellow' ? '#f7a600' : '#ffffff';
-      }
-    });
-  });
-
   // Upload e Arrastar Foto
   dropzone.addEventListener('click', () => photoFileInput.click());
 
