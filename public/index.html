@@ -133,12 +133,26 @@
         <div class="form-section">
           <h3 class="section-subtitle">🏢 Empresa Prestadora</h3>
           <div class="logo-partner-card">
-            <div class="partner-logo-preview">
+            <div class="partner-logo-preview" id="partnerLogoPreviewBox" style="background-color: #f7a600;">
               <img src="./assets/logo-ddm.png" alt="Logo Grupo DDM">
             </div>
             <div class="partner-details">
               <div class="partner-name">GRUPO DDM</div>
               <div class="partner-desc">Prestadora de Serviços Credenciada Light</div>
+            </div>
+          </div>
+
+          <div class="form-group" style="margin-top: 1rem;">
+            <label style="font-size: 0.85rem; color: var(--text-muted);">Estilo do Fundo da Logo:</label>
+            <div style="display: flex; gap: 1.25rem; margin-top: 0.4rem;">
+              <label style="display: flex; align-items: center; gap: 0.45rem; cursor: pointer; font-size: 0.9rem; font-weight: 600;">
+                <input type="radio" name="logoBgOption" value="yellow" checked style="accent-color: var(--primary);">
+                <span>🟡 Fundo Amarelo (Igual ao Crachá)</span>
+              </label>
+              <label style="display: flex; align-items: center; gap: 0.45rem; cursor: pointer; font-size: 0.9rem;">
+                <input type="radio" name="logoBgOption" value="white" style="accent-color: var(--primary);">
+                <span>⚪ Caixa Branca</span>
+              </label>
             </div>
           </div>
         </div>

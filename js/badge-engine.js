@@ -20,6 +20,7 @@ class BadgeEngine {
     this.defaultLogoLoaded = false;
 
     this.customLogoImg = null;
+    this.logoBackground = 'yellow'; // 'yellow' (recomendado) ou 'white'
 
     this.photoImg = null;
     this.photoCrop = {
@@ -196,11 +197,36 @@ class BadgeEngine {
     ctx.restore();
   }
 
+  setLogoBackground(bg) {
+    this.logoBackground = bg;
+    this.render();
+  }
+
   renderLogo(ctx) {
+    const box = this.specs.logoBox;
+
+    // Se o fundo for amarelo (igual ao amarelo do crachá da Light)
+    if (this.logoBackground === 'yellow') {
+      ctx.save();
+      ctx.fillStyle = '#F7A600'; // Amarelo oficial da Light
+      const pad = 12;
+      const x = box.x - pad;
+      const y = box.y - pad;
+      const w = box.width + pad * 2;
+      const h = box.height + pad * 2;
+      if (ctx.roundRect) {
+        ctx.beginPath();
+        ctx.roundRect(x, y, w, h, 28);
+        ctx.fill();
+      } else {
+        ctx.fillRect(x, y, w, h);
+      }
+      ctx.restore();
+    }
+
     const logoImg = this.customLogoImg || (this.defaultLogoLoaded ? this.defaultLogoImg : null);
     if (!logoImg) return;
 
-    const box = this.specs.logoBox;
     const padX = 28;
     const padY = 20;
     const targetW = box.width - (padX * 2);
