@@ -324,6 +324,18 @@ document.addEventListener('DOMContentLoaded', () => {
   inputMatricula.addEventListener('input', updateDataFromInputs);
   inputCargo.addEventListener('input', updateDataFromInputs);
 
+  // Alternador de Estilo da Logo (Caixa Branca Oficial Light vs Fundo Amarelo)
+  const partnerLogoPreviewBox = document.getElementById('partnerLogoPreviewBox');
+  document.querySelectorAll('input[name="logoBgOption"]').forEach((radio) => {
+    radio.addEventListener('change', (e) => {
+      const mode = e.target.value;
+      badgeEngine.setLogoBackground(mode);
+      if (partnerLogoPreviewBox) {
+        partnerLogoPreviewBox.style.backgroundColor = mode === 'white' ? '#ffffff' : '#f7a600';
+      }
+    });
+  });
+
   // Upload e Arrastar Foto
   dropzone.addEventListener('click', () => photoFileInput.click());
 

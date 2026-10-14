@@ -20,7 +20,7 @@ class BadgeEngine {
     this.defaultLogoLoaded = false;
 
     this.customLogoImg = null;
-    this.logoBackground = 'yellow'; // 'yellow' (recomendado) ou 'white'
+    this.logoBackground = 'white'; // 'white' (oficial Light) ou 'yellow'
 
     this.photoImg = null;
     this.photoCrop = {
@@ -203,12 +203,27 @@ class BadgeEngine {
   }
 
   renderLogo(ctx) {
+    const box = this.specs.logoBox;
+
+    // Se estiver no modo Caixa Branca (Exigência oficial do e-mail da Light)
+    if (this.logoBackground === 'white') {
+      ctx.save();
+      ctx.fillStyle = '#FFFFFF';
+      ctx.beginPath();
+      if (ctx.roundRect) {
+        ctx.roundRect(box.x, box.y, box.width, box.height, 24);
+      } else {
+        ctx.rect(box.x, box.y, box.width, box.height);
+      }
+      ctx.fill();
+      ctx.restore();
+    }
+
     const logoImg = this.customLogoImg || (this.defaultLogoLoaded ? this.defaultLogoImg : null);
     if (!logoImg) return;
 
-    const box = this.specs.logoBox;
-    const padX = 20;
-    const padY = 16;
+    const padX = 28;
+    const padY = 20;
     const targetW = box.width - (padX * 2);
     const targetH = box.height - (padY * 2);
 
