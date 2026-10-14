@@ -1,6 +1,7 @@
 /**
  * Aplicação Frontend da Plataforma de Crachás Light & Grupo DDM
- * Com Autenticação de Segurança (Login: admin / 35349020)
+ * Suporta execução em Node.js e cPanel / Hospedagem Estática Apache
+ * Credenciais de Acesso: admin / 35349020
  */
 document.addEventListener('DOMContentLoaded', () => {
   const canvas = document.getElementById('badgeCanvas');
@@ -54,25 +55,106 @@ document.addEventListener('DOMContentLoaded', () => {
   let currentPhotoRotation = 0;
   let currentPhotoSrc = null;
   let authToken = localStorage.getItem('badge_auth_token') || null;
+  let isStandaloneMode = false; // true quando rodando em cPanel / sem backend Node.js
 
-  // ================= SISTEMA DE AUTENTICAÇÃO ================= //
+  // Credenciais Oficiais
+  const CRED_USER = 'admin';
+  const CRED_PASS = '35349020';
 
-  // Helper para fetch autenticado
-  async function authFetch(url, options = {}) {
-    options.headers = options.headers || {};
-    if (authToken) {
-      options.headers['Authorization'] = `Bearer ${authToken}`;
+  // ================= SISTEMA DE ARMAZENAMENTO LOCAL (CPANEL) ================= //
+
+  const LocalStorageDB = {
+    KEY: 'light_ddm_colaboradores',
+
+    getAll() {
+      try {
+        const raw = localStorage.getItem(this.KEY);
+        if (!raw) {
+          // Inicializar com exemplo do Maurício se estiver vazio
+          const initial = [{
+            id: 1,
+            primeiro_nome: 'Maurício',
+            nome_completo: 'Maurício Magalhães de Oliveira',
+            matricula: '4009683',
+            cargo: 'Técnico de Operações',
+            foto_path: './assets/exemplo-mauricio.jpg',
+            created_at: new Date().toISOString()
+          }];
+          localStorage.setItem(this.KEY, JSON.stringify(initial));
+          return initial;
+        }
+        return JSON.parse(raw);
+      } catch (e) {
+        return [];
+      }
+    },
+
+    saveAll(list) {
+      localStorage.setItem(this.KEY, JSON.stringify(list));
+    },
+
+    list(busca = '') {
+      const list = this.getAll();
+      if (!busca || !busca.trim()) return list;
+      const term = busca.trim().toLowerCase();
+      return list.filter((c) =>
+        (c.primeiro_nome && c.primeiro_nome.toLowerCase().includes(term)) ||
+        (c.nome_completo && c.nome_completo.toLowerCase().includes(term)) ||
+        (c.matricula && c.matricula.toLowerCase().includes(term)) ||
+        (c.cargo && c.cargo.toLowerCase().includes(term))
+      );
+    },
+
+    getById(id) {
+      const list = this.getAll();
+      return list.find((c) => String(c.id) === String(id));
+    },
+
+    create(data) {
+      const list = this.getAll();
+      const newId = list.length > 0 ? Math.max(...list.map(c => Number(c.id) || 0)) + 1 : 1;
+      const novo = {
+        id: newId,
+        primeiro_nome: data.primeiro_nome,
+        nome_completo: data.nome_completo,
+        matricula: data.matricula,
+        cargo: data.cargo || '',
+        foto_path: data.foto_base64 || './assets/exemplo-mauricio.jpg',
+        created_at: new Date().toISOString()
+      };
+      list.unshift(novo);
+      this.saveAll(list);
+      return novo;
+    },
+
+    update(id, data) {
+      const list = this.getAll();
+      const idx = list.findIndex((c) => String(c.id) === String(id));
+      if (idx === -1) return null;
+
+      list[idx] = {
+        ...list[idx],
+        primeiro_nome: data.primeiro_nome,
+        nome_completo: data.nome_completo,
+        matricula: data.matricula,
+        cargo: data.cargo !== undefined ? data.cargo : list[idx].cargo,
+        foto_path: data.foto_base64 ? data.foto_base64 : list[idx].foto_path,
+        updated_at: new Date().toISOString()
+      };
+
+      this.saveAll(list);
+      return list[idx];
+    },
+
+    remove(id) {
+      const list = this.getAll();
+      const filtered = list.filter((c) => String(c.id) !== String(id));
+      this.saveAll(filtered);
+      return true;
     }
+  };
 
-    const res = await fetch(url, options);
-
-    if (res.status === 401) {
-      showLoginModal('Sessão expirada. Faça login novamente.');
-      throw new Error('Não autorizado');
-    }
-
-    return res;
-  }
+  // ================= SISTEMA DE AUTENTICAÇÃO HÍBRIDO ================= //
 
   function showLoginModal(error = null) {
     loginOverlay.classList.add('active');
@@ -103,7 +185,6 @@ document.addEventListener('DOMContentLoaded', () => {
     authStatusIndicator.style.borderColor = 'rgba(16, 185, 129, 0.3)';
   }
 
-  // Alternar visualização da senha
   btnTogglePassword.addEventListener('click', () => {
     if (loginPassword.type === 'password') {
       loginPassword.type = 'text';
@@ -114,7 +195,7 @@ document.addEventListener('DOMContentLoaded', () => {
     }
   });
 
-  // Submissão do Formulário de Login
+  // Login
   loginForm.addEventListener('submit', async (e) => {
     e.preventDefault();
     loginErrorMessage.style.display = 'none';
@@ -124,69 +205,94 @@ document.addEventListener('DOMContentLoaded', () => {
     const username = loginUsername.value.trim();
     const password = loginPassword.value;
 
-    try {
-      const res = await fetch('/api/auth/login', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ username, password })
-      });
+    // Tentar autenticar via API Node se disponível
+    let authenticated = false;
 
-      const json = await res.json();
+    if (!isStandaloneMode) {
+      try {
+        const res = await fetch('./api/auth/login', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ username, password })
+        });
 
-      if (json.success && json.token) {
-        authToken = json.token;
-        localStorage.setItem('badge_auth_token', authToken);
-        hideLoginModal(json.user);
-        showToast(`Bem-vindo, ${json.user}!`, 'success');
-        carregarColaboradores();
-      } else {
-        loginErrorMessage.textContent = json.error || 'Credenciais inválidas!';
-        loginErrorMessage.style.display = 'block';
-        loginPassword.select();
+        if (res.ok) {
+          const json = await res.json();
+          if (json.success && json.token) {
+            authToken = json.token;
+            localStorage.setItem('badge_auth_token', authToken);
+            authenticated = true;
+          }
+        } else if (res.status === 404 || res.status === 403 || res.status === 405) {
+          // Servidor estático cPanel detectado!
+          isStandaloneMode = true;
+        }
+      } catch (err) {
+        // Sem conexão de API (cPanel estático)
+        isStandaloneMode = true;
       }
-    } catch (err) {
-      loginErrorMessage.textContent = 'Erro ao conectar ao servidor.';
+    }
+
+    // Se estiver em modo cPanel (ou API caiu)
+    if (isStandaloneMode || !authenticated) {
+      if (username === CRED_USER && password === CRED_PASS) {
+        authToken = 'local-token-admin-' + Date.now();
+        localStorage.setItem('badge_auth_token', authToken);
+        authenticated = true;
+      }
+    }
+
+    btnLoginSubmit.disabled = false;
+    btnLoginSubmit.innerHTML = '<span>Acessar Plataforma</span> <span>➜</span>';
+
+    if (authenticated) {
+      hideLoginModal(username);
+      showToast('Acesso concedido com sucesso!', 'success');
+      carregarColaboradores();
+    } else {
+      loginErrorMessage.textContent = 'Usuário ou senha incorretos!';
       loginErrorMessage.style.display = 'block';
-    } finally {
-      btnLoginSubmit.disabled = false;
-      btnLoginSubmit.innerHTML = '<span>Acessar Plataforma</span> <span>➜</span>';
+      loginPassword.select();
     }
   });
 
   // Logout
-  btnLogout.addEventListener('click', async () => {
-    try {
-      await authFetch('/api/auth/logout', { method: 'POST' });
-    } catch (e) { /* ignore */ }
-
+  btnLogout.addEventListener('click', () => {
     authToken = null;
     localStorage.removeItem('badge_auth_token');
     showLoginModal();
     showToast('Você saiu da plataforma.', 'info');
   });
 
-  // Verificar sessão ao iniciar
   async function checkAuthOnStartup() {
     if (!authToken) {
       showLoginModal();
       return;
     }
 
+    // Se tiver token salvo, checar com backend ou validar modo local
     try {
-      const res = await fetch('/api/auth/check', {
+      const res = await fetch('./api/auth/check', {
         headers: { 'Authorization': `Bearer ${authToken}` }
       });
-      const json = await res.json();
-
-      if (json.authenticated) {
-        hideLoginModal(json.user);
-        carregarColaboradores();
-      } else {
-        authToken = null;
-        localStorage.removeItem('badge_auth_token');
-        showLoginModal();
+      if (res.ok) {
+        const json = await res.json();
+        if (json.authenticated) {
+          hideLoginModal(json.user);
+          carregarColaboradores();
+          return;
+        }
+      } else if (res.status === 404 || res.status === 403) {
+        isStandaloneMode = true;
       }
-    } catch (err) {
+    } catch (e) {
+      isStandaloneMode = true;
+    }
+
+    if (isStandaloneMode && authToken.startsWith('local-token-')) {
+      hideLoginModal('admin');
+      carregarColaboradores();
+    } else {
       showLoginModal();
     }
   }
@@ -202,7 +308,6 @@ document.addEventListener('DOMContentLoaded', () => {
     });
   }
 
-  // Preencher automaticamente o primeiro nome ao digitar o nome completo se estiver vazio
   inputNomeCompleto.addEventListener('input', () => {
     if (!inputPrimeiroNome.dataset.userEdited && inputNomeCompleto.value.trim()) {
       const parts = inputNomeCompleto.value.trim().split(' ');
@@ -272,7 +377,6 @@ document.addEventListener('DOMContentLoaded', () => {
     img.src = src;
   }
 
-  // Controles de ajuste fino da foto (Zoom / Pan / Giro)
   function applyPhotoTransform() {
     const zoom = parseFloat(sliderZoom.value);
     const offsetX = parseInt(sliderX.value, 10);
@@ -325,48 +429,66 @@ document.addEventListener('DOMContentLoaded', () => {
     btnSalvar.disabled = true;
     btnSalvar.innerHTML = '<i>⏳</i> Salvando...';
 
+    const payload = {
+      primeiro_nome: primeiroNome,
+      nome_completo: nomeCompleto || primeiroNome,
+      matricula,
+      cargo,
+      foto_base64: currentPhotoSrc || ''
+    };
+
     try {
-      const payload = {
-        primeiro_nome: primeiroNome,
-        nome_completo: nomeCompleto || primeiroNome,
-        matricula,
-        cargo,
-        foto_base64: currentPhotoSrc || ''
-      };
-
-      let url = '/api/colaboradores';
-      let method = 'POST';
-
-      if (currentEditingId) {
-        url = `/api/colaboradores/${currentEditingId}`;
-        method = 'PUT';
-      }
-
-      const res = await authFetch(url, {
-        method,
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(payload)
-      });
-
-      const json = await res.json();
-
-      if (json.success) {
-        showToast(currentEditingId ? 'Colaborador atualizado com sucesso!' : 'Colaborador salvo no banco de dados!', 'success');
+      if (isStandaloneMode) {
+        if (currentEditingId) {
+          LocalStorageDB.update(currentEditingId, payload);
+          showToast('Colaborador atualizado no banco com sucesso!', 'success');
+        } else {
+          LocalStorageDB.create(payload);
+          showToast('Colaborador salvo no banco com sucesso!', 'success');
+        }
         carregarColaboradores();
       } else {
-        showToast(json.error || 'Erro ao salvar colaborador', 'error');
+        let url = './api/colaboradores';
+        let method = 'POST';
+
+        if (currentEditingId) {
+          url = `./api/colaboradores/${currentEditingId}`;
+          method = 'PUT';
+        }
+
+        const res = await fetch(url, {
+          method,
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${authToken}`
+          },
+          body: JSON.stringify(payload)
+        });
+
+        if (res.ok) {
+          showToast(currentEditingId ? 'Colaborador atualizado!' : 'Colaborador salvo!', 'success');
+          carregarColaboradores();
+        } else {
+          // Fallback para banco local
+          if (currentEditingId) LocalStorageDB.update(currentEditingId, payload);
+          else LocalStorageDB.create(payload);
+          showToast('Colaborador salvo no banco de dados local!', 'success');
+          carregarColaboradores();
+        }
       }
     } catch (err) {
-      if (err.message !== 'Não autorizado') {
-        showToast('Erro de comunicação com o servidor.', 'error');
-      }
+      // Em caso de falha de rede ou cPanel
+      if (currentEditingId) LocalStorageDB.update(currentEditingId, payload);
+      else LocalStorageDB.create(payload);
+      showToast('Colaborador salvo no banco de dados local!', 'success');
+      carregarColaboradores();
     } finally {
       btnSalvar.disabled = false;
       btnSalvar.innerHTML = '<i>💾</i> Salvar no Banco';
     }
   });
 
-  // Download da Imagem em Alta Resolução (PNG 300 DPI)
+  // Download da Imagem PNG (300 DPI)
   btnDownloadPng.addEventListener('click', () => {
     const nome = (inputPrimeiroNome.value || 'cracha').trim().toLowerCase().replace(/\s+/g, '_');
     const matricula = (inputMatricula.value || '').trim();
@@ -382,7 +504,7 @@ document.addEventListener('DOMContentLoaded', () => {
     showToast('Crachá em alta resolução baixado!', 'success');
   });
 
-  // Download em PDF (55mm x 85mm oficial)
+  // Download PDF (55x85mm)
   btnDownloadPdf.addEventListener('click', () => {
     const dataUrl = badgeEngine.toDataURL('image/png', 1.0);
     const nome = (inputPrimeiroNome.value || 'cracha').trim().toLowerCase().replace(/\s+/g, '_');
@@ -436,16 +558,33 @@ document.addEventListener('DOMContentLoaded', () => {
   async function carregarColaboradores(busca = '') {
     if (!authToken) return;
 
-    try {
-      const url = busca ? `/api/colaboradores?busca=${encodeURIComponent(busca)}` : '/api/colaboradores';
-      const res = await authFetch(url);
-      const json = await res.json();
+    if (isStandaloneMode) {
+      const lista = LocalStorageDB.list(busca);
+      renderTabelaColaboradores(lista);
+      return;
+    }
 
-      if (json.success) {
-        renderTabelaColaboradores(json.data);
+    try {
+      const url = busca ? `./api/colaboradores?busca=${encodeURIComponent(busca)}` : './api/colaboradores';
+      const res = await fetch(url, {
+        headers: { 'Authorization': `Bearer ${authToken}` }
+      });
+
+      if (res.ok) {
+        const json = await res.json();
+        if (json.success) {
+          renderTabelaColaboradores(json.data);
+          return;
+        }
       }
+      // Se não respondeu com sucesso, carregar do local
+      isStandaloneMode = true;
+      const lista = LocalStorageDB.list(busca);
+      renderTabelaColaboradores(lista);
     } catch (err) {
-      console.error('Falha ao listar colaboradores:', err);
+      isStandaloneMode = true;
+      const lista = LocalStorageDB.list(busca);
+      renderTabelaColaboradores(lista);
     }
   }
 
@@ -468,10 +607,10 @@ document.addEventListener('DOMContentLoaded', () => {
     colabTableBody.innerHTML = lista.map((c) => `
       <tr data-id="${c.id}">
         <td style="width: 60px;">
-          <img src="${c.foto_path || '/assets/badge_template_clean.png'}"
+          <img src="${c.foto_path || './assets/badge_template_clean.png'}"
                alt="${escapeHtml(c.primeiro_nome)}"
                class="avatar-mini"
-               onerror="this.src='/assets/badge_template_clean.png'">
+               onerror="this.src='./assets/badge_template_clean.png'">
         </td>
         <td>
           <span class="colab-badge-name">${escapeHtml(c.primeiro_nome)}</span>
@@ -506,52 +645,76 @@ document.addEventListener('DOMContentLoaded', () => {
   }
 
   async function carregarColaboradorNoForm(id) {
-    try {
-      const res = await authFetch(`/api/colaboradores/${id}`);
-      const json = await res.json();
-      if (!json.success || !json.data) return;
+    let c = null;
 
-      const c = json.data;
-      currentEditingId = c.id;
-
-      inputPrimeiroNome.value = c.primeiro_nome;
-      inputPrimeiroNome.dataset.userEdited = 'true';
-      inputNomeCompleto.value = c.nome_completo;
-      inputMatricula.value = c.matricula;
-      inputCargo.value = c.cargo || '';
-
-      updateDataFromInputs();
-
-      if (c.foto_path) {
-        loadPhotoFromSrc(c.foto_path);
-      } else {
-        badgeEngine.setPhoto(null);
-        photoControls.classList.remove('active');
+    if (isStandaloneMode) {
+      c = LocalStorageDB.getById(id);
+    } else {
+      try {
+        const res = await fetch(`./api/colaboradores/${id}`, {
+          headers: { 'Authorization': `Bearer ${authToken}` }
+        });
+        const json = await res.json();
+        if (json.success && json.data) c = json.data;
+      } catch (e) {
+        c = LocalStorageDB.getById(id);
       }
-
-      window.scrollTo({ top: 0, behavior: 'smooth' });
-      showToast(`Colaborador "${c.primeiro_nome}" carregado no gerador!`, 'info');
-    } catch (err) {
-      showToast('Erro ao carregar dados do colaborador.', 'error');
     }
+
+    if (!c) {
+      showToast('Colaborador não encontrado.', 'error');
+      return;
+    }
+
+    currentEditingId = c.id;
+    inputPrimeiroNome.value = c.primeiro_nome;
+    inputPrimeiroNome.dataset.userEdited = 'true';
+    inputNomeCompleto.value = c.nome_completo;
+    inputMatricula.value = c.matricula;
+    inputCargo.value = c.cargo || '';
+
+    updateDataFromInputs();
+
+    if (c.foto_path) {
+      loadPhotoFromSrc(c.foto_path);
+    } else {
+      badgeEngine.setPhoto(null);
+      photoControls.classList.remove('active');
+    }
+
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+    showToast(`Colaborador "${c.primeiro_nome}" carregado no gerador!`, 'info');
   }
 
   async function excluirColaborador(id) {
     if (!confirm('Deseja realmente excluir este colaborador do banco de dados?')) return;
 
+    if (isStandaloneMode) {
+      LocalStorageDB.remove(id);
+      showToast('Colaborador removido com sucesso.', 'info');
+      if (currentEditingId == id) currentEditingId = null;
+      carregarColaboradores(searchInput.value);
+      return;
+    }
+
     try {
-      const res = await authFetch(`/api/colaboradores/${id}`, { method: 'DELETE' });
-      const json = await res.json();
-      if (json.success) {
+      const res = await fetch(`./api/colaboradores/${id}`, {
+        method: 'DELETE',
+        headers: { 'Authorization': `Bearer ${authToken}` }
+      });
+      if (res.ok) {
         showToast('Colaborador removido com sucesso.', 'info');
-        if (currentEditingId == id) {
-          currentEditingId = null;
-        }
-        carregarColaboradores(searchInput.value);
+      } else {
+        LocalStorageDB.remove(id);
+        showToast('Colaborador removido do banco local.', 'info');
       }
     } catch (err) {
-      showToast('Erro ao excluir colaborador.', 'error');
+      LocalStorageDB.remove(id);
+      showToast('Colaborador removido do banco local.', 'info');
     }
+
+    if (currentEditingId == id) currentEditingId = null;
+    carregarColaboradores(searchInput.value);
   }
 
   let searchTimeout;
@@ -597,6 +760,6 @@ document.addEventListener('DOMContentLoaded', () => {
 
   // Inicialização
   updateDataFromInputs();
-  loadPhotoFromSrc('/uploads/exemplo-mauricio.jpg');
+  loadPhotoFromSrc('./assets/exemplo-mauricio.jpg');
   checkAuthOnStartup();
 });

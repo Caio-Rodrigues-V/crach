@@ -1,0 +1,265 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Gerador de Crachás | Light & Grupo DDM</title>
+  <link rel="stylesheet" href="./css/style.css">
+  <!-- jsPDF para geração de PDF em tamanho 55x85mm oficial -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+</head>
+<body>
+
+  <!-- Topo / Cabeçalho -->
+  <header class="app-header">
+    <div class="header-container">
+      <div class="header-brand">
+        <span class="brand-badge">OFICIAL</span>
+        <div>
+          <h1 class="brand-title">
+            <span>⚡ Light</span>
+            <span style="font-weight: 300; font-size: 1rem; color: var(--text-muted);">|</span>
+            <span style="font-size: 1.1rem; color: #fff;">Gerador de Crachás</span>
+          </h1>
+          <p class="brand-partner">Em parceria com <span>GRUPO DDM</span></p>
+        </div>
+      </div>
+
+      <div class="header-status">
+        <div class="status-indicator" id="authStatusIndicator">
+          <span class="status-dot"></span>
+          <span id="authStatusText">Conectado</span>
+        </div>
+        <button type="button" class="btn btn-secondary btn-sm" id="btnLogout" style="display: none; padding: 0.35rem 0.75rem;">
+          🚪 Sair
+        </button>
+      </div>
+    </div>
+  </header>
+
+  <!-- Conteúdo Principal -->
+  <main class="main-wrapper">
+    <div class="editor-grid">
+
+      <!-- Coluna da Esquerda: Formulário & Controles de Foto -->
+      <section class="panel">
+        <h2 class="panel-title">
+          <i>📝</i> Dados do Colaborador
+        </h2>
+
+        <!-- Seção 1: Textos do Crachá -->
+        <div class="form-section">
+          <div class="form-grid-2">
+            <div class="form-group">
+              <label for="inputPrimeiroNome">
+                Nome no Crachá <span class="hint">(Arial Bold 22)</span>
+              </label>
+              <input type="text" id="inputPrimeiroNome" class="form-control" placeholder="Ex: Maurício" value="Maurício" required>
+            </div>
+
+            <div class="form-group">
+              <label for="inputMatricula">
+                Matrícula <span class="hint">(Arial Bold 10)</span>
+              </label>
+              <input type="text" id="inputMatricula" class="form-control" placeholder="Ex: 4009683" value="4009683" required>
+            </div>
+          </div>
+
+          <div class="form-group">
+            <label for="inputNomeCompleto">
+              Nome Completo <span class="hint">(Arial Bold 10 - até 2 linhas)</span>
+            </label>
+            <input type="text" id="inputNomeCompleto" class="form-control" placeholder="Ex: Maurício Magalhães de Oliveira" value="Maurício Magalhães de Oliveira" required>
+          </div>
+
+          <div class="form-group">
+            <label for="inputCargo">
+              Cargo / Função <span class="hint">(Opcional para registro)</span>
+            </label>
+            <input type="text" id="inputCargo" class="form-control" placeholder="Ex: Eletricista de Rede">
+          </div>
+        </div>
+
+        <!-- Seção 2: Upload da Foto com Enquadramento -->
+        <div class="form-section">
+          <h3 class="section-subtitle">📸 Foto do Colaborador (3x4)</h3>
+
+          <div class="upload-dropzone" id="photoDropzone">
+            <input type="file" id="photoFileInput" accept="image/*" style="display: none;">
+            <div class="upload-icon">📷</div>
+            <div class="upload-text">Clique ou arraste a foto aqui</div>
+            <div class="upload-subtext">Formatos aceitos: JPG, PNG, WEBP (Sem distorção)</div>
+          </div>
+
+          <div class="rule-alert">
+            <span>⚠️</span>
+            <div>
+              <strong>Atenção às normas da Light:</strong> A foto não pode ser esticada, amassada ou com baixa visibilidade do rosto. Use os controles abaixo para enquadrar perfeitamente.
+            </div>
+          </div>
+
+          <!-- Controles de Ajuste de Foto -->
+          <div class="photo-controls" id="photoControls">
+            <div class="slider-group">
+              <label>🔍 Zoom:</label>
+              <input type="range" id="sliderZoom" min="0.5" max="3.0" step="0.05" value="1.0">
+              <span class="slider-val" id="valZoom">1.0x</span>
+            </div>
+
+            <div class="slider-group">
+              <label>↔️ Posição X:</label>
+              <input type="range" id="sliderX" min="-300" max="300" step="2" value="0">
+              <span class="slider-val" id="valX">0px</span>
+            </div>
+
+            <div class="slider-group">
+              <label>↕️ Posição Y:</label>
+              <input type="range" id="sliderY" min="-300" max="300" step="2" value="0">
+              <span class="slider-val" id="valY">0px</span>
+            </div>
+
+            <div class="photo-actions-row">
+              <button type="button" class="btn btn-secondary btn-sm" id="btnRotate">
+                🔄 Girar 90°
+              </button>
+              <button type="button" class="btn btn-secondary btn-sm" id="btnResetPhoto">
+                ↺ Resetar Foto
+              </button>
+            </div>
+          </div>
+        </div>
+
+        <!-- Seção 3: Empresa Prestadora / Logo -->
+        <div class="form-section">
+          <h3 class="section-subtitle">🏢 Empresa Prestadora</h3>
+          <div class="logo-partner-card">
+            <div class="partner-logo-preview">
+              <img src="./assets/logo-ddm.png" alt="Logo Grupo DDM">
+            </div>
+            <div class="partner-details">
+              <div class="partner-name">GRUPO DDM</div>
+              <div class="partner-desc">Prestadora de Serviços Credenciada Light</div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Botões de Ação -->
+        <div class="actions-main">
+          <button type="button" class="btn btn-primary" id="btnSalvar">
+            <i>💾</i> Salvar no Banco
+          </button>
+          <button type="button" class="btn btn-secondary" id="btnNovo">
+            <i>🔄</i> Novo Colaborador
+          </button>
+        </div>
+
+        <div class="actions-download">
+          <button type="button" class="btn btn-success" id="btnDownloadPng">
+            <i>📥</i> Baixar Imagem (300 DPI)
+          </button>
+          <button type="button" class="btn btn-secondary" id="btnDownloadPdf">
+            <i>📄</i> Baixar PDF (55x85mm)
+          </button>
+        </div>
+
+        <div style="margin-top: 0.75rem;">
+          <button type="button" class="btn btn-secondary" id="btnImprimir" style="width: 100%;">
+            <i>🖨️</i> Imprimir Crachá
+          </button>
+        </div>
+      </section>
+
+      <!-- Coluna da Direita: Live Preview do Crachá -->
+      <section class="preview-container">
+        <div class="badge-card-holder">
+          <div class="badge-lanyard-hole"></div>
+
+          <div class="badge-canvas-wrapper">
+            <canvas id="badgeCanvas"></canvas>
+          </div>
+
+          <div class="badge-dimensions-tag">
+            📐 Formato Oficial: 55 mm x 85 mm (936 × 1446 px @ 430 DPI)
+          </div>
+        </div>
+      </section>
+
+    </div>
+
+    <!-- Seção Inferior: Banco de Dados de Colaboradores Cadastrados -->
+    <section class="database-section">
+      <div class="table-header-controls">
+        <h2 class="panel-title" style="margin-bottom: 0; border: none; padding: 0;">
+          <i>👥</i> Colaboradores Cadastrados (<span id="totalColabCount">0</span>)
+        </h2>
+
+        <div class="search-box">
+          <span class="search-box-icon">🔍</span>
+          <input type="text" id="searchInput" class="form-control" placeholder="Buscar por nome, matrícula ou cargo...">
+        </div>
+      </div>
+
+      <div class="table-responsive">
+        <table class="colab-table">
+          <thead>
+            <tr>
+              <th>Foto</th>
+              <th>Colaborador</th>
+              <th>Matrícula</th>
+              <th>Cargo</th>
+              <th style="text-align: right;">Ações</th>
+            </tr>
+          </thead>
+          <tbody id="colabTableBody">
+            <!-- Linhas preenchidas dinamicamente pelo JavaScript -->
+          </tbody>
+        </table>
+      </div>
+    </section>
+  </main>
+
+  <!-- Modal / Tela de Autenticação Obrigatória -->
+  <div class="login-overlay active" id="loginOverlay">
+    <div class="login-card">
+      <div class="login-header">
+        <div class="login-logo-badge">⚡ Light | DDM</div>
+        <h2 class="login-title">Acesso Restrito</h2>
+        <p class="login-subtitle">Identifique-se para acessar a plataforma de crachás</p>
+      </div>
+
+      <form id="loginForm" class="login-form">
+        <div id="loginErrorMessage" class="login-error" style="display: none;"></div>
+
+        <div class="form-group">
+          <label for="loginUsername">Usuário</label>
+          <div class="input-icon-wrapper">
+            <span class="input-icon">👤</span>
+            <input type="text" id="loginUsername" class="form-control" placeholder="Digite seu usuário..." autocomplete="username" required>
+          </div>
+        </div>
+
+        <div class="form-group">
+          <label for="loginPassword">Senha de Acesso</label>
+          <div class="input-icon-wrapper">
+            <span class="input-icon">🔒</span>
+            <input type="password" id="loginPassword" class="form-control" placeholder="Digite sua senha..." autocomplete="current-password" required>
+            <button type="button" class="btn-toggle-password" id="btnTogglePassword" tabindex="-1">👁️</button>
+          </div>
+        </div>
+
+        <button type="submit" class="btn btn-primary login-btn" id="btnLoginSubmit">
+          <span>Acessar Plataforma</span>
+          <span>➜</span>
+        </button>
+
+        <div class="login-footer-info">
+          <span>🔒 Conexão Segura & Banco Protegido</span>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <script src="./js/badge-engine.js"></script>
+  <script src="./js/app.js"></script>
+</body>
+</html>

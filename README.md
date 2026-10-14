@@ -58,6 +58,19 @@ http://localhost:3000
 
 ---
 
+## 🌐 Como Subir no cPanel (Hospedagem Web)
+
+Para hospedar no cPanel sem erro **403 Forbidden**:
+1. No seu cPanel, acesse o **Gerenciador de Arquivos** (*File Manager*).
+2. Vá até a pasta **`public_html`** (ou na subpasta do seu domínio/subdomínio).
+3. Suba os arquivos do projeto diretamente dentro de `public_html`:
+   - `index.html` (deve ficar na raiz de `public_html`)
+   - `.htaccess`
+   - pastas `css/`, `js/` e `assets/`
+4. Pronto! O projeto abre imediatamente com o login `admin` / `35349020` e banco de dados local com suporte total a geração de imagens e PDFs sem depender de configurações complexas de Node no cPanel.
+
+---
+
 ## 📂 Estrutura do Projeto
 
 ```text

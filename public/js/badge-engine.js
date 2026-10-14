@@ -67,7 +67,7 @@ class BadgeEngine {
         console.error('Falha ao carregar template base');
         resolve();
       };
-      this.templateImg.src = '/assets/badge_template_clean.png';
+      this.templateImg.src = './assets/badge_template_clean.png';
     });
 
     const p2 = new Promise((resolve) => {
@@ -79,7 +79,7 @@ class BadgeEngine {
         console.error('Falha ao carregar logo DDM');
         resolve();
       };
-      this.defaultLogoImg.src = '/assets/logo-ddm.png';
+      this.defaultLogoImg.src = './assets/logo-ddm.png';
     });
 
     await Promise.all([p1, p2]);
